@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: service-1-moderation
+
+  main:
+    web-application-type: reactive
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: moderation-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+      properties:
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: "*"
+        spring.json.value.default.type: kz.project.moderation.dto.AppealEvent
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/moderation_db
+    username: postgres
+    password: sara1234
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      repositories:
+        enabled: false
+
+server:
+  port: 8081
+
+logging:
+  level:
+    org.springframework: INFO
+    kz.project: DEBUG
+    org.springframework.kafka: DEBUG
+    org.springframework.web.reactive: INFO
+    org.flywaydb: INFO
+
+resilience4j:
+  retry:
+    instances:
+      enrichment:
+        max-attempts: 3
+        wait-duration: 400ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 1.5
+        retry-exceptions:
+          - org.springframework.web.reactive.function.client.WebClientResponseException
+          - java.net.ConnectException
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException

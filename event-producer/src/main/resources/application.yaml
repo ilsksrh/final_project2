@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: event-producer
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
+
+server:
+  port: 8083
+
+logging:
+  level:
+    root: INFO
+    kz.project: DEBUG
