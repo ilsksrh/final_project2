@@ -25,7 +25,7 @@ public class WebClientConfig {
                         .addHandlerLast(new WriteTimeoutHandler(5, TimeUnit.SECONDS)));
 
         return WebClient.builder()
-                .baseUrl("http://localhost:8082")
+                .baseUrl("http://service-2-enrichment:8082")
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }

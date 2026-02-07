@@ -6,7 +6,7 @@ spring:
     web-application-type: reactive
 
   kafka:
-    bootstrap-servers: localhost:19092
+    bootstrap-servers: kafka:9092
     consumer:
       group-id: moderation-group
       auto-offset-reset: earliest
@@ -21,7 +21,7 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/moderation_db
+    url: jdbc:postgresql://postgres:5432/moderation_db
     username: postgres
     password: sara1234
     driver-class-name: org.postgresql.Driver
@@ -40,7 +40,7 @@ spring:
 
   data:
     redis:
-      host: localhost
+      host: redis
       port: 6379
       repositories:
         enabled: false
@@ -48,42 +48,8 @@ spring:
 server:
   port: 8081
 
-logging:
-  level:
-    org.springframework: INFO
-    kz.project: DEBUG
-    org.springframework.kafka: DEBUG
-    org.springframework.web.reactive: INFO
-    org.flywaydb: INFO
-
-resilience4j:
-  retry:
-    instances:
-      enrichment:
-        max-attempts: 3
-        wait-duration: 400ms
-        enable-exponential-backoff: true
-        exponential-backoff-multiplier: 1.5
-        retry-exceptions:
-          - org.springframework.web.reactive.function.client.WebClientResponseException
-          - java.net.ConnectException
-          - java.io.IOException
-          - java.util.concurrent.TimeoutException
-
-#actuator
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus,loggers,env,beans,mappings,threaddump
-  endpoint:
-    health:
-      show-details: always
-    metrics:
-      enabled: true
-    prometheus:
-      enabled: true
-  metrics:
-    tags:
-      application: ${spring.application.name}
-
+        include: health,info,metrics,prometheus

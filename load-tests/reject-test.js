@@ -1,15 +1,24 @@
+import http from 'k6/http';
+import { sleep } from 'k6';
+
+export const options = {
+    stages: [
+        { duration: '10s', target: 5 },
+        { duration: '30s', target: 5 },
+        { duration: '10s', target: 0 },
+    ],
+};
+
 export default function () {
-    const payload = JSON.stringify({
-        clientId: 123,
-        category: "urgent",
-        theme: "Ночь",
-        createdAt: "2026-02-06T03:00:00+05:00"  // 03:00 — вне 9–18
-    });
+    http.post(
+        'http://localhost:8083/events',
+        JSON.stringify({
+            clientId: Math.floor(Math.random() * 10000),
+            category: 'support',
+            theme: 'k6 load test',
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+    );
 
-    const res = http.post('http://localhost:8083/send', payload, {
-        headers: { 'Content-Type': 'application/json' },
-    });
-
-    check(res, { 'status is 200': (r) => r.status === 200 });
     sleep(1);
 }

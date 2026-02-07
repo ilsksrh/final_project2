@@ -5,9 +5,9 @@ scrape_configs:
   - job_name: 'service-1'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8081']
+      - targets: ['service-1-moderation:8081']
 
   - job_name: 'service-2'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8082']
+      - targets: ['service-2-enrichment:8082']
