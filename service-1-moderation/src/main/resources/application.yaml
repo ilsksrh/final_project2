@@ -6,7 +6,7 @@ spring:
     web-application-type: reactive
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:19092
     consumer:
       group-id: moderation-group
       auto-offset-reset: earliest
@@ -69,3 +69,21 @@ resilience4j:
           - java.net.ConnectException
           - java.io.IOException
           - java.util.concurrent.TimeoutException
+
+#actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers,env,beans,mappings,threaddump
+  endpoint:
+    health:
+      show-details: always
+    metrics:
+      enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+

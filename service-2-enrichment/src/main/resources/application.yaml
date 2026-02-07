@@ -17,3 +17,16 @@ logging:
   level:
     org.springframework: INFO
     kz.project: DEBUG
+
+#actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}

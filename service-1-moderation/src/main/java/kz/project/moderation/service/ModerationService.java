@@ -12,11 +12,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.reactive.function.client.WebClient;
-import io.github.resilience4j.retry.annotation.Retry;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import org.springframework.web.reactive.function.client.WebClient;
+import io.github.resilience4j.retry.annotation.Retry;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -33,85 +32,73 @@ public class ModerationService {
     private final ProcessedEventRepository processedEventRepository;
     private final AppealRepository appealRepository;
 
-    public void process(AppealEvent event) {
-        log.debug("Processing appeal event: eventId={}, clientId={}, category={}",
-                event.getEventId(), event.getClientId(), event.getCategory());
+    public Mono<Void> process(AppealEvent event) {
+        return Mono.fromCallable(() ->
+                        processedEventRepository.existsByEventId(event.getEventId()))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(exists -> {
+                    if (exists) {
+                        log.info("Duplicate event skipped: {}", event.getEventId());
+                        return Mono.empty();
+                    }
+                    return runModerationFlow(event);
+                });
+    }
 
-        if (processedEventRepository.existsByEventId(event.getEventId())) {
-            log.info("Duplicate event skipped (idempotency check): eventId={}", event.getEventId());
-            return;
-        }
-
-        enrichAndProcess(event);
+    private Mono<Void> runModerationFlow(AppealEvent event) {
+        return enrich(event.getClientId())
+                .flatMap(enrichment -> {
+                    String decision = applyRulesAndDecide(event, enrichment);
+                    if ("APPROVED".equals(decision)) {
+                        return Mono.fromRunnable(() -> approveAndPublish(event))
+                                .subscribeOn(Schedulers.boundedElastic())
+                                .then();
+                    }
+                    log.info("Event rejected: eventId={}, reason={}", event.getEventId(), decision);
+                    return Mono.empty();
+                })
+                .then();
     }
 
     @Retry(name = "enrichment")
     private Mono<EnrichmentResponse> enrich(Long clientId) {
-        return enrichmentWebClient
-                .get()
+        return enrichmentWebClient.get()
                 .uri("/extended-info/{clientId}", clientId)
                 .retrieve()
                 .bodyToMono(EnrichmentResponse.class)
                 .timeout(Duration.ofSeconds(3))
                 .defaultIfEmpty(new EnrichmentResponse())
-                .doOnNext(resp -> log.debug("Enrichment received for client {}: activeCategories={}, totalActive={}",
-                        clientId, resp.getActiveCategories(), resp.getTotalActiveAppeals()))
                 .onErrorResume(e -> {
-                    log.warn("Enrichment call failed for client {}: {}", clientId, e.getMessage());
+                    log.warn("Enrichment failed for client {}: {}", clientId, e.getMessage());
                     return Mono.just(new EnrichmentResponse());
-                })
-                .subscribeOn(Schedulers.boundedElastic());
-    }
-
-    private void enrichAndProcess(AppealEvent event) {
-        enrich(event.getClientId())
-                .subscribe(
-                        enrichment -> {
-                            String decision = applyRulesAndDecide(event, enrichment);
-                            if ("APPROVED".equals(decision)) {
-                                approveAndPublish(event);
-                            } else {
-                                log.info("Event rejected: eventId={}, decision={}", event.getEventId(), decision);
-                            }
-                        },
-                        error -> log.error("Enrichment processing failed for client {}, event {}: {}",
-                                event.getClientId(), event.getEventId(), error.toString(), error)
-                );
+                });
     }
 
     String applyRulesAndDecide(AppealEvent event, EnrichmentResponse enrichment) {
         if (enrichment.getTotalActiveAppeals() > 5) {
-            log.info("Rejected by Redis enrichment: clientId={}, totalActiveAppeals={}",
-                    event.getClientId(), enrichment.getTotalActiveAppeals());
-            return "REJECTED: Too many active appeals according to enrichment data (>5)";
-
+            return "REJECTED: Too many active appeals";
         }
 
         for (ModerationRule rule : rules) {
             if (!rule.check(event, enrichment)) {
-                String reason = rule.getRejectReason();
-                log.info("Rejected by rule {}: eventId={}, clientId={}, category={}, reason={}",
-                        rule.getClass().getSimpleName(), event.getEventId(), event.getClientId(), event.getCategory(), reason);
-                return "REJECTED: " + reason;
+                return "REJECTED: " + rule.getRejectReason();
             }
         }
         return "APPROVED";
     }
 
-    @Transactional
-    public void approveAndPublish(AppealEvent event) {
+    private void approveAndPublish(AppealEvent event) {
         if (processedEventRepository.existsByEventId(event.getEventId())) {
-            log.warn("Race condition detected: event already processed during approval: eventId={}", event.getEventId());
             return;
         }
 
-        ProcessedEventEntity processed = new ProcessedEventEntity(
-                event.getEventId(),
-                event.getClientId(),
-                OffsetDateTime.now()
+        processedEventRepository.save(
+                new ProcessedEventEntity(
+                        event.getEventId(),
+                        event.getClientId(),
+                        OffsetDateTime.now()
+                )
         );
-        processedEventRepository.save(processed);
-        log.debug("Saved processed event: eventId={}", event.getEventId());
 
         AppealEntity appeal = new AppealEntity();
         appeal.setClientId(event.getClientId());
@@ -120,18 +107,17 @@ public class ModerationService {
         appeal.setStatus("ACTIVE");
         appeal.setCreatedAt(event.getCreatedAt() != null ? event.getCreatedAt() : OffsetDateTime.now());
         appealRepository.save(appeal);
-        log.debug("Created active appeal for clientId={}, category={}", event.getClientId(), event.getCategory());
 
-        ModerationResult result = new ModerationResult();
-        result.setEventId(event.getEventId());
-        result.setClientId(event.getClientId());
-        result.setCategory(event.getCategory());
-        result.setTheme(event.getTheme());
-        result.setDecision("APPROVED");
-        result.setRejectReason(null);
-        result.setProcessedAt(OffsetDateTime.now());
+        ModerationResult result = new ModerationResult(
+                event.getEventId(),
+                event.getClientId(),
+                event.getCategory(),
+                event.getTheme(),
+                "APPROVED",
+                null,
+                OffsetDateTime.now()
+        );
 
         kafkaTemplate.send("topic-2", event.getEventId().toString(), result);
-        log.info("Event fully approved and published to topic-2: eventId={}", event.getEventId());
     }
 }

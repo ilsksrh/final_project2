@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Mono;
 
 @Slf4j
 @Component
@@ -19,7 +20,15 @@ public class AppealKafkaConsumer {
             groupId = "moderation-group"
     )
     public void consume(AppealEvent event) {
-        log.debug("Received event from Kafka: {}", event);
-        moderationService.process(event);
+        log.debug("Received event from Kafka: eventId={}", event.getEventId());
+        moderationService.process(event)
+                .doOnError(error -> log.error(
+                        "Error processing event {}: {}",
+                        event.getEventId(),
+                        error.getMessage()
+                ))
+                .onErrorResume(e -> Mono.empty())
+                .subscribe();
+
     }
 }
